@@ -1,13 +1,9 @@
 ﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Loader2, AlertTriangle, FileText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-
-// Vite resolves this to a real asset URL. The worker must be set before the first
-// getDocument() call, or pdf.js silently falls back to a fake worker running on
-// the main thread â€” which blocks the UI on every page render.
-pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+// Worker setup lives in one module and is derived from the installed
+// pdfjs-dist version, so API and worker can never drift apart.
+import { pdfjsLib } from '../lib/pdfjs';
 
 /**
  * One shared PDF surface for the whole platform â€” the student reader and the

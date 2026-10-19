@@ -62,7 +62,11 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!user) return { error: new Error('Not authenticated') };
     const { error: updateError } = await updateProfile(user.id, { full_name: fullName });
     if (!updateError) {
-      setProfile((prev) => (prev ? { ...prev, full_name: fullName, updated_at: new Date().toISOString() } : { id: user.id, full_name: fullName, email: user.email || null, avatar_url: null }));
+      setProfile((prev) =>
+        prev
+          ? { ...prev, full_name: fullName, updated_at: new Date().toISOString() }
+          : prev,
+      );
     }
     return { error: updateError };
   };

@@ -31,6 +31,8 @@ export interface DbMaterial {
   /** Named preview URLs written by the admin console (see migration). */
   preview_page_1_url?: string | null;
   preview_page_2_url?: string | null;
+  created_at?: string;
+  updated_at?: string;
   /**
    * Only populated when a row is read from the `materials` BASE TABLE — i.e. by
    * the admin console. The public `materials_public` view deliberately omits

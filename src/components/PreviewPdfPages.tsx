@@ -1,10 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-
-// Same worker setup as SecurePdfReader. Without it pdf.js falls back to a fake
-// main-thread worker and the landing page stutters while previews render.
-pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+import { pdfjsLib } from '../lib/pdfjs';
 
 /**
  * Lightweight 2-page sample preview.
@@ -46,7 +41,7 @@ export const PreviewPdfPages: React.FC<{ url: string }> = ({ url }) => {
 
         const ctx = canvas.getContext('2d');
         if (!ctx) continue;
-        await pdfPage.render({ canvas, canvasContext: ctx, viewport }).promise;
+        await pdfPage.render({ canvasContext: ctx, viewport }).promise;
       }
 
       if (!cancelled) setStatus('ready');
