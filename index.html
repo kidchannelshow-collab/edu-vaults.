@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EduVault | Secure Educational Platform</title>
+    <meta name="description" content="Premium educational platform for secure learning materials." />
+    <meta property="og:title" content="EduVault | Secure Educational Platform" />
+    <meta property="og:description" content="Premium educational platform for secure learning materials." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      // Apply the saved theme before first paint so a light-mode user never sees
+      // a dark flash before React mounts. Inline and dependency-free on purpose.
+      (function () {
+        try {
+          var stored = localStorage.getItem('eduvault_theme');
+          document.documentElement.setAttribute('data-theme', stored === 'light' ? 'light' : 'dark');
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
+  </head>
+  <body class="bg-canvas text-ink-soft font-sans antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

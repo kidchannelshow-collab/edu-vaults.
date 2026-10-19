@@ -1,0 +1,39 @@
+# Supabase project config — tracked in git on purpose.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# `supabase functions deploy <name> --no-verify-jwt` sets JWT verification for
+# THAT ONE DEPLOY ONLY. Nothing records it. A later deploy without the flag
+# silently re-enables platform verification, and the function starts rejecting
+# callers with a 401 that carries no CORS headers — which the browser reports as
+# "Failed to send request to edge function", pointing everyone at the network.
+#
+# Declaring it here makes the setting survive redeploys and code review.
+#
+# verify_jwt = false does NOT make a function public. Each one authenticates the
+# caller itself:
+#   create-payment / verify-payment  -> auth.getUser() on the caller's token
+#   flutterwave-webhook              -> the `verif-hash` header from Flutterwave
+#
+# Leaving `verify_jwt = true` on a function that authenticates itself is still
+# safe — it is strictly stricter — but it is what produces the CORS-less 401 when
+# a session is stale, so the client cannot tell "not signed in" from "network down".
+
+[functions.get-secure-material]
+verify_jwt = true
+
+# Required: Flutterwave's servers cannot present a Supabase JWT, so a webhook
+# that relies on platform verification can never fire. It authenticates the
+# callback by comparing the `verif-hash` header against FLW_WEBHOOK_SECRET.
+[functions.flutterwave-webhook]
+verify_jwt = false
+
+# Authenticates with auth.getUser(); false so its own 401 (with CORS headers)
+# reaches the client instead of an opaque edge-level rejection.
+[functions.create-payment]
+verify_jwt = false
+
+# Same pattern as create-payment. Add others here only after confirming the
+# function performs its own authorisation.
+# [functions.verify-payment]
+# verify_jwt = false

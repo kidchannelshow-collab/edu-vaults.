@@ -1,0 +1,7 @@
+{
+  "name": "EduVault",
+  "description": "Premium educational platform for secure learning materials.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
