@@ -20,6 +20,10 @@ export default defineConfig(() => {
         '@': srcDir,
       },
     },
+    // Root-relative asset URLs. The app is served from the domain root on
+    // Vercel, and vercel.json's SPA rewrite falls back to index.html for any
+    // non-file path, so /assets/* keeps resolving after a deep-link refresh.
+    base: '/',
     // Keep build output at the project root `dist/`, which vercel.json points at.
     build: {
       outDir: 'dist',

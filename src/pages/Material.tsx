@@ -208,7 +208,6 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
   // NEVER minted client-side: the bucket is private and clients hold no storage
   // SELECT policy, so a free account cannot sign its own URL for a paid PDF.
   const [signedPdfUrl, setSignedPdfUrl] = useState<string | null>(null);
-  const [screenshotCount, setScreenshotCount] = useState<number>(0);
   // Strikes 1 and 2 only. There is no "fatal" variant: the third strike is a
   // hard lock rendered as a page, not a dialog.
   const [screenshotModal, setScreenshotModal] = useState<{
@@ -259,6 +258,11 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const validationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastScreenshotAttemptRef = useRef<number>(0);
+  // Sliding 10-minute window of real capture attempts. Pruning on every
+  // attempt resets the count automatically, so occasional screenshots over a
+  // long session never accumulate into a lockout.
+  const screenshotStrikesRef = useRef<number[]>([]);
+  const STRIKE_WINDOW_MS = 10 * 60 * 1000;
   // True while the PDF canvas is mounted. Used to keep background checks from
   // dropping into the 'loading' branch, which unmounts SecurePdfReader and
   // destroys the canvas, scroll position and rendered page.
@@ -307,28 +311,48 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
     }
     lastScreenshotAttemptRef.current = now;
 
-    const newCount = screenshotCount + 1;
-    setScreenshotCount(newCount);
+    // Sliding 10-minute window, persisted so a page refresh cannot clear the
+    // strike count. Entries older than the window are pruned on each attempt,
+    // which is what resets the counter after a clean 10-minute period.
+    const strikeKey = `eduvault_screenshot_strikes_${user.id}`;
+    let storedStrikes: number[] = screenshotStrikesRef.current;
+    try {
+      const raw = localStorage.getItem(strikeKey);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(parsed)) storedStrikes = parsed.filter((n) => typeof n === 'number');
+    } catch {
+      /* storage unavailable — in-memory window still applies */
+    }
+
+    const strikes = storedStrikes.filter((timestamp) => now - timestamp < STRIKE_WINDOW_MS);
+    strikes.push(now);
+    screenshotStrikesRef.current = strikes;
+    try {
+      localStorage.setItem(strikeKey, JSON.stringify(strikes));
+    } catch {
+      /* storage unavailable */
+    }
+    const newCount = strikes.length;
 
     const eventType = newCount >= 3 ? 'screenshot_limit_exceeded' : 'screenshot_detected';
     try {
       await supabase.rpc('log_security_event', {
         p_event_type: eventType,
         p_material_id: material?.id || null,
-        p_metadata: { attempt: newCount, source },
+        p_metadata: { attempt: newCount, window_minutes: 10, source },
       });
     } catch (e) {
       console.error('Failed to log security event:', e);
     }
 
-    // Strikes 1 and 2: a full-screen warning. Strike 3 locks the account.
+    // Strikes 1 and 2: a full-screen warning naming the remaining attempts.
     if (newCount < 3) {
       setScreenshotModal({
-        title: newCount === 1 ? 'Security warning' : 'Final warning',
+        title: newCount === 1 ? 'Screenshot prohibited' : 'Final warning',
         message:
           newCount === 1
-            ? '⚠️ Warning (Strike 1/3): Screenshot attempt detected. Content is DRM protected.'
-            : '🚨 Final Warning (Strike 2/3): Next attempt will permanently deactivate your access!',
+            ? 'Warning: Screenshot detected! Attempt 1 of 3 within 10 minutes. 3 attempts will deactivate your account.'
+            : 'Final warning: Screenshot detected! Attempt 2 of 3 within 10 minutes. 1 more attempt will deactivate your account.',
       });
       return;
     }
@@ -369,7 +393,7 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
     setSignedPdfUrl(null);
     setReaderState('denied');
     setDenialReason('account_suspended');
-    setDenialMessage('Your account was suspended after repeated capture attempts.');
+    setDenialMessage('Account deactivated due to repeated screenshot attempts.');
     setScreenshotModal(null);
     setHardLocked(true);
   };
@@ -409,7 +433,7 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('beforeprint', handleBeforePrint);
     };
-  }, [readerState, screenshotCount, material, user]);
+  }, [readerState, material, user]);
 
   // Initialize and authorize secure reader session
   const initializeReader = async () => {
@@ -1117,18 +1141,18 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
         </div>
 
         <div className="space-y-2">
-          <h1 className="text-xl font-semibold text-ink">Account locked</h1>
+          <h1 className="text-xl font-semibold text-ink">Account deactivated</h1>
           <p className="text-sm leading-relaxed text-ink-muted">
-            Your session was locked after repeated attempts to capture protected material. This
-            guide is licensed to you alone and may not be copied, photographed or shared.
+            Account deactivated due to repeated screenshot attempts. Please contact the
+            administrator to re-activate your account.
           </p>
         </div>
 
         <div className="w-full rounded-lg border border-danger/30 bg-danger/10 p-4 text-left">
-          <p className="mb-1 text-sm font-semibold text-danger">Your access has been withdrawn</p>
+          <p className="mb-1 text-sm font-semibold text-danger">Access withdrawn</p>
           <p className="text-sm leading-relaxed text-ink-soft">
-            This account is suspended and the device session revoked. To request reinstatement,
-            contact EduVault support and quote the email address on your account.
+            Your entitlement has been revoked and this device session ended. Contact the
+            administrator with the email address on your account to request re-activation.
           </p>
         </div>
 
