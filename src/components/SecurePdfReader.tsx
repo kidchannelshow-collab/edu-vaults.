@@ -109,6 +109,8 @@ export interface SecurePdfReaderProps {
   /** Document search request. */
   searchRequest?: { query: string; token: number } | null;
   onSearchResult?: (message: string | null) => void;
+  /** Reports the current chapter/section label as the reader scrolls. */
+  onSectionChange?: (section: string) => void;
 }
 
 const ZOOM_PERCENT_MIN = 25;
@@ -116,6 +118,59 @@ const ZOOM_PERCENT_MAX = 500;
 
 const clampPercent = (n: number) =>
   Math.min(ZOOM_PERCENT_MAX, Math.max(ZOOM_PERCENT_MIN, Math.round(n / 10) * 10));
+
+interface ChapterMark {
+  page: number;
+  title: string;
+}
+
+/**
+ * Flatten the PDF outline into page-anchored chapter marks.
+ *
+ * Resolution is defensive: `item.dest` may be a name (resolved via
+ * getDestination) or an explicit array whose first element is a page ref. Any
+ * malformed entry is skipped — an outline must never stop the document loading.
+ */
+async function loadChapterMarks(doc: any): Promise<ChapterMark[]> {
+  try {
+    const outline = await doc.getOutline();
+    if (!Array.isArray(outline) || outline.length === 0) return [];
+
+    const flatten = (items: any[]): any[] =>
+      items.flatMap((item) => [item, ...(Array.isArray(item.items) ? flatten(item.items) : [])]);
+
+    const marks: ChapterMark[] = [];
+
+    for (const item of flatten(outline)) {
+      const title = typeof item?.title === 'string' ? item.title.trim() : '';
+      if (!title) continue;
+
+      try {
+        const dest =
+          typeof item.dest === 'string' ? await doc.getDestination(item.dest) : item.dest;
+        if (!Array.isArray(dest) || dest.length === 0) continue;
+
+        const ref = dest[0];
+        let pageNumber: number | null = null;
+
+        if (ref && typeof ref === 'object' && typeof doc.getPageIndex === 'function') {
+          const index = await doc.getPageIndex(ref);
+          if (Number.isFinite(index)) pageNumber = index + 1;
+        } else if (typeof ref === 'number' && Number.isFinite(ref)) {
+          pageNumber = ref + 1;
+        }
+
+        if (pageNumber && pageNumber > 0) marks.push({ page: pageNumber, title });
+      } catch {
+        /* skip an unresolvable outline entry */
+      }
+    }
+
+    return marks.sort((a, b) => a.page - b.page);
+  } catch {
+    return [];
+  }
+}
 
 export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
   url,
@@ -129,6 +184,7 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
   continuous = false,
   searchRequest = null,
   onSearchResult,
+  onSectionChange,
 }) => {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -157,6 +213,12 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
   // the upsert is debounced so scrolling never floods Supabase.
   const userIdRef = useRef<string | null>(null);
   const progressTimerRef = useRef<number | null>(null);
+  // Page-anchored chapter marks parsed from the PDF outline (may be empty).
+  const chaptersRef = useRef<ChapterMark[]>([]);
+  const onSectionChangeRef = useRef(onSectionChange);
+  useEffect(() => {
+    onSectionChangeRef.current = onSectionChange;
+  }, [onSectionChange]);
   useEffect(() => {
     let cancelled = false;
     supabase.auth.getUser().then(({ data }) => {
@@ -233,6 +295,10 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
         }
         docRef.current = doc;
         setNumPages(doc.numPages);
+        // Outline-derived chapters are loaded in parallel; failure is harmless.
+        void loadChapterMarks(doc).then((marks) => {
+          if (!cancelled) chaptersRef.current = marks;
+        });
         const saved = Math.min(doc.numPages, Math.max(1, readPosition(materialId)));
         setPage(saved);
         if (saved > 1) {
@@ -396,26 +462,44 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
     writePosition(materialId, page, numPages);
     onPageChangeRef.current?.(page, numPages);
 
+    // Chapter/section label: the last outline mark at or before this page, or a
+    // page-range fallback when the PDF has no outline.
+    const chapter = chaptersRef.current.filter((mark) => mark.page <= page).pop();
+    const section =
+      chapter?.title ||
+      `Pages ${Math.max(1, page - 1)}–${Math.min(numPages, page + 1)}`;
+    onSectionChangeRef.current?.(section);
+
     const userId = userIdRef.current;
     if (!userId) return;
 
     if (progressTimerRef.current) window.clearTimeout(progressTimerRef.current);
     progressTimerRef.current = window.setTimeout(() => {
       const progressPct = Math.min(100, Math.max(0, Math.round((page / numPages) * 100)));
-      // Fire-and-forget: a failed sync must never interrupt reading.
-      void supabase
-        .from('user_material_progress')
-        .upsert(
-          {
-            user_id: userId,
-            material_id: materialId,
-            last_page: page,
-            total_pages: numPages,
-            progress_percent: progressPct,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id,material_id' },
-        );
+      const payload: Record<string, unknown> = {
+        user_id: userId,
+        material_id: materialId,
+        last_page: page,
+        total_pages: numPages,
+        progress_percent: progressPct,
+        last_section: section,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Fire-and-forget: a failed sync must never interrupt reading. If the
+      // last_section migration has not been applied, retry without that column
+      // so page/percentage persistence still works.
+      void (async () => {
+        const { error } = await supabase
+          .from('user_material_progress')
+          .upsert(payload, { onConflict: 'user_id,material_id' });
+        if (error) {
+          delete payload.last_section;
+          await supabase
+            .from('user_material_progress')
+            .upsert(payload, { onConflict: 'user_id,material_id' });
+        }
+      })();
     }, 700);
   }, [materialId, page, numPages, status]);
 
@@ -537,42 +621,12 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
     return () => io.disconnect();
   }, [status, numPages]);
 
-  const go = useCallback(
-    (delta: number) => {
-      // Capture the inline anchor BEFORE the page change; fullscreen scrolls its
-      // own container, so the window must be left alone.
-      if (!fullscreenRef.current) pendingScrollRef.current = window.scrollY;
-      setPage((p) => {
-        const next = Math.min(numPages || 1, Math.max(1, p + delta));
-        if (continuous) {
-          document
-            .getElementById(`page-${next}`)
-            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-        return next;
-      });
-    },
-    [numPages, continuous],
-  );
-
-  // ---- Pinch + Ctrl/Cmd-wheel zoom, wheel/swipe page turning --------------
+  // ---- Pinch + Ctrl/Cmd-wheel zoom ----------------------------------------
   // Attached natively so preventDefault works: React's onWheel/onTouchMove are
   // passive at the root, which lets the browser page-zoom win instead.
-  const goRef = useRef<(delta: number) => void>(() => {});
-  const wheelAccumRef = useRef(0);
-  const lastWheelAtRef = useRef(0);
-  useEffect(() => {
-    goRef.current = go;
-  }, [go]);
-
   useEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
-
-    const scrollContainer = () => {
-      const marked = el.closest('[data-reader-scroll]') as HTMLElement | null;
-      return marked ?? (document.scrollingElement as HTMLElement | null);
-    };
 
     const onWheel = (e: WheelEvent) => {
       // Ctrl/Cmd + wheel zooms. Plain wheel is left entirely to the browser so
@@ -646,33 +700,6 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
     },
     [measure],
   );
-  const onWheel = useCallback(
-    (e: React.WheelEvent) => {
-      if (!fullscreenRef.current) return;
-      const el = scrollRef.current;
-      if (!el) return;
-
-      const now = Date.now();
-      if (now - wheelLockRef.current < WHEEL_COOLDOWN) return;
-
-      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
-      const atTop = el.scrollTop <= 4;
-
-      if (e.deltaY > 0 && atBottom && page < numPages) {
-        wheelLockRef.current = now;
-        go(1);
-        el.scrollTop = 0;
-      } else if (e.deltaY < 0 && atTop && page > 1) {
-        wheelLockRef.current = now;
-        go(-1);
-        // Land at the foot of the previous page so the motion reads as continuous.
-        requestAnimationFrame(() => {
-          el.scrollTop = el.scrollHeight;
-        });
-      }
-    },
-    [go, page, numPages],
-  );
 
   const shell = (children: React.ReactNode) => (
     <div
@@ -693,7 +720,6 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
       {isFullscreen ? (
         <div
           ref={scrollRef}
-          onWheel={onWheel}
           className="pdf-scroll-container min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-2 py-4"
         >
           {children}
@@ -711,6 +737,8 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
       <div className="relative w-full max-w-full">
         <canvas
           ref={canvasRef}
+          draggable={false}
+          onContextMenu={(e) => e.preventDefault()}
           className="mx-auto block max-w-full rounded-sm border border-slate-800 bg-white shadow-lg"
         />
         {pageRendering && (
@@ -746,7 +774,7 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
   const continuousView = (
     <div
       ref={continuousRef}
-      className="w-full bg-slate-950 px-3 py-4"
+      className="w-full overflow-x-hidden bg-slate-950 px-3 py-4"
     >
       <div className="mx-auto flex w-full flex-col items-center gap-8 pb-24">
         {Array.from({ length: numPages }, (_, i) => (
@@ -846,10 +874,12 @@ const PageSheet: React.FC<{ doc: any; pageNumber: number; scale: number }> = ({
   return (
     <div
       ref={holderRef}
-      className="relative flex min-h-[70vh] w-full items-center justify-start"
+      className="relative flex min-h-[70vh] w-full items-center justify-start overflow-x-hidden"
     >
       <canvas
         ref={canvasRef}
+        draggable={false}
+        onContextMenu={(e) => e.preventDefault()}
         className="mx-auto block rounded-sm border border-slate-800 bg-white shadow-lg"
       />
       <span className="absolute -bottom-5 right-0 text-[11px] tabular-nums text-slate-500">

@@ -83,6 +83,8 @@ export const PreviewPdfPages: React.FC<{ url: string }> = ({ url }) => {
                 ref={(el) => {
                   canvasRefs.current[pageNumber - 1] = el;
                 }}
+                draggable={false}
+                onContextMenu={(e) => e.preventDefault()}
                 className="block h-auto w-full bg-white"
               />
             </div>

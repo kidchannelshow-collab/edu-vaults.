@@ -7,8 +7,6 @@ import { Modal } from '../components/ui/Modal';
 import { Card } from '../components/ui/Card';
 import {
   ShieldCheck,
-  ChevronLeft,
-  ChevronRight,
   ZoomIn,
   ZoomOut,
   ArrowLeft,
@@ -271,6 +269,11 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
   // or the live reader). Background rechecks must not flash the loading screen.
   const readerResolvedRef = useRef(false);
   const fullscreenStageRef = useRef<HTMLDivElement | null>(null);
+  // Stable per-mount viewing session id, embedded in the watermark so a
+  // photographed screen can be traced to a specific opening of the book.
+  const sessionIdRef = useRef(
+    `SES-${Math.random().toString(36).slice(2, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`,
+  );
   useEffect(() => {
     readerActiveRef.current = readerState === 'active';
     readerResolvedRef.current = readerState === 'active' || readerState === 'entitled';
@@ -406,6 +409,17 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
       if (e.key === 'PrintScreen') {
         e.preventDefault();
         handleScreenshotAttempt('print_screen_key');
+      }
+      // Clipboard / save / view-source / select-all are suppressed inside the
+      // protected viewer. These are deterrents, not screenshot protection, and
+      // they are not counted as strikes.
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.shiftKey &&
+        ['c', 's', 'a', 'u'].includes(e.key.toLowerCase())
+      ) {
+        e.preventDefault();
+        return;
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
         e.preventDefault();
@@ -722,13 +736,13 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
   // the codebase (dormant) but are no longer called from this button.
   const BANK_DETAILS = [
     { key: 'bank', label: 'Bank name', value: 'OPay' },
-    { key: 'account', label: 'Account number', value: '8074829070' },
-    { key: 'name', label: 'Account name', value: 'VICTOR OLATUNJI OLUWAFIKAYO' },
+    { key: 'account', label: 'Account number', value: '9162259958' },
+    { key: 'name', label: 'Account name', value: 'Olatunji Victor Oluwafikayo' },
     { key: 'amount', label: 'Amount', value: '₦1,500' },
   ];
 
   const WHATSAPP_LINK =
-    'https://wa.me/2348074829070?text=Hello%2C%20I%20have%20transferred%20%E2%82%A61%2C500%20for%20book%20access.';
+    'https://wa.me/2349162259958?text=Hello%2C%20I%20have%20transferred%20%E2%82%A61%2C500%20for%20book%20access.';
 
   const copyToClipboard = async (key: string, value: string) => {
     try {
@@ -1097,7 +1111,7 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
               rel="noopener noreferrer"
               className="font-semibold text-gold hover:underline"
             >
-              08074829070
+              09162259958
             </a>{' '}
             on WhatsApp or SMS for instant book activation.
           </p>
@@ -1216,7 +1230,7 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
                   rel="noreferrer"
                   className="font-medium text-gold hover:underline"
                 >
-                  08074829070
+                  09162259958
                 </a>{' '}
                 on WhatsApp to activate your book access.
               </div>
@@ -1375,18 +1389,22 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
       <div
         ref={fullscreenStageRef}
         data-reader-scroll
-        className="fixed inset-0 z-[100] flex min-h-screen w-screen flex-col overflow-auto bg-canvas"
+        onContextMenu={(e) => e.preventDefault()}
+        onDragStart={(e) => e.preventDefault()}
+        onCopy={(e) => e.preventDefault()}
+        onCut={(e) => e.preventDefault()}
+        className="fixed inset-0 z-[100] flex min-h-screen w-screen select-none flex-col overflow-auto bg-canvas [-webkit-touch-callout:none]"
       >
         <div className="relative flex min-h-screen w-full flex-col p-2">
           <div className="pointer-events-none absolute inset-0 z-10 flex select-none flex-col items-center justify-center space-y-16 opacity-[0.04] [transform:rotate(-25deg)]">
             <div className="whitespace-nowrap text-2xl font-black tracking-widest sm:text-3xl">
-              LICENSED TO: {userName.toUpperCase()} • {userEmailMasked.toUpperCase()}
+              LICENSED TO: {userName.toUpperCase()} • {userEmailMasked.toUpperCase()} • SESSION {sessionIdRef.current}
             </div>
             <div className="whitespace-nowrap text-2xl font-black tracking-widest sm:text-3xl">
-              EDUVAULT SECURE STREAM • AUTHORIZED DEVICE SESSION
+              EDUVAULT SECURE STREAM • AUTHORIZED DEVICE SESSION • {sessionIdRef.current}
             </div>
             <div className="whitespace-nowrap text-2xl font-black tracking-widest sm:text-3xl">
-              LICENSED TO: {userName.toUpperCase()} • {userEmailMasked.toUpperCase()}
+              LICENSED TO: {userName.toUpperCase()} • {userEmailMasked.toUpperCase()} • SESSION {sessionIdRef.current}
             </div>
           </div>
 
@@ -1430,7 +1448,13 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
   // WPS-style reader: the viewport IS the reader. No DashboardLayout, no
   // sidebar, no app header — only the minimal control bar and the canvas.
   return (
-    <div className="fixed inset-0 flex h-screen w-screen flex-col overflow-hidden overscroll-none bg-canvas">
+    <div
+      onContextMenu={(e) => e.preventDefault()}
+      onDragStart={(e) => e.preventDefault()}
+      onCopy={(e) => e.preventDefault()}
+      onCut={(e) => e.preventDefault()}
+      className="fixed inset-0 flex h-screen w-screen select-none flex-col overflow-hidden overscroll-none bg-canvas [-webkit-touch-callout:none]"
+    >
       {/* Slim title bar — title is centred between Back and the session badge */}
       <header className="relative z-30 grid shrink-0 grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-line-strong bg-surface px-3 py-1.5">
         <Button
@@ -1451,17 +1475,8 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
 
       {/* Single-line WPS toolbar */}
       <div className="relative z-20 flex shrink-0 flex-wrap items-center gap-2 border-b border-line-strong bg-surface-deep px-3 py-1.5">
-        {/* Page navigation */}
+        {/* Page navigation — scroll or type a page; no step buttons */}
         <div className="flex items-center gap-1">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => jumpToPage(currentPage - 1)}
-            disabled={currentPage <= 1}
-            leftIcon={<ChevronLeft className="h-3.5 w-3.5" />}
-          >
-            Previous
-          </Button>
           <span className="text-xs text-ink-muted">Page</span>
           <input
             type="number"
@@ -1480,15 +1495,6 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
             className="w-14 rounded border border-line-strong bg-canvas px-1.5 py-1 text-center text-xs tabular-nums text-ink focus:border-gold focus:outline-none"
           />
           <span className="text-xs tabular-nums text-ink-muted">of {totalPages}</span>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => jumpToPage(currentPage + 1)}
-            disabled={currentPage >= totalPages}
-            rightIcon={<ChevronRight className="h-3.5 w-3.5" />}
-          >
-            Next
-          </Button>
         </div>
 
         <span className="mx-1 h-4 w-px bg-line-strong" />
@@ -1595,7 +1601,7 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
         <div className="relative min-h-0 min-w-0 flex-1">
         <div
           data-reader-scroll
-          className="pdf-scroll-container h-full overflow-auto overscroll-contain [touch-action:pan-x_pan-y] [scroll-behavior:smooth]"
+          className="pdf-scroll-container h-full overflow-y-auto overflow-x-hidden overscroll-contain [touch-action:pan-y] [scroll-behavior:smooth]"
         >
 
         {TEST_UNLOCK_READER && (
@@ -1632,13 +1638,13 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
               {/* Watermark */}
               <div className="pointer-events-none absolute inset-0 z-10 flex select-none flex-col items-center justify-center space-y-16 opacity-[0.04] [transform:rotate(-25deg)]">
                 <div className="whitespace-nowrap text-2xl font-black tracking-widest sm:text-3xl">
-                  LICENSED TO: {userName.toUpperCase()} • {userEmailMasked.toUpperCase()}
+                  LICENSED TO: {userName.toUpperCase()} • {userEmailMasked.toUpperCase()} • SESSION {sessionIdRef.current}
                 </div>
                 <div className="whitespace-nowrap text-2xl font-black tracking-widest sm:text-3xl">
-                  EDUVAULT SECURE STREAM • AUTHORIZED DEVICE SESSION
+                  EDUVAULT SECURE STREAM • AUTHORIZED DEVICE SESSION • {sessionIdRef.current}
                 </div>
                 <div className="whitespace-nowrap text-2xl font-black tracking-widest sm:text-3xl">
-                  LICENSED TO: {userName.toUpperCase()} • {userEmailMasked.toUpperCase()}
+                  LICENSED TO: {userName.toUpperCase()} • {userEmailMasked.toUpperCase()} • SESSION {sessionIdRef.current}
                 </div>
               </div>
 

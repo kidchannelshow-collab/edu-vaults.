@@ -48,6 +48,8 @@ export interface MaterialWithStatus extends DbMaterial {
   currentPage?: number;
   /** True page count from reading_progress. */
   totalPages?: number;
+  /** Current chapter/section label persisted with live progress. */
+  lastSection?: string;
 }
 
 export interface SecureAccessResult {
@@ -115,6 +117,7 @@ export async function getFlagshipMaterial(
     let progress = 0;
     let currentPage: number | undefined;
     let totalPages: number | undefined;
+    let lastSection: string | undefined;
 
     if (userId) {
       const { data: entitlement } = await supabase
@@ -134,7 +137,7 @@ export async function getFlagshipMaterial(
       // (a missing table is just a PostgREST error, never a crash).
       const { data: liveProgress } = await supabase
         .from('user_material_progress')
-        .select('last_page, total_pages, progress_percent')
+        .select('last_page, total_pages, progress_percent, last_section')
         .eq('user_id', userId)
         .eq('material_id', material.id)
         .maybeSingle();
@@ -143,6 +146,7 @@ export async function getFlagshipMaterial(
         progress = Number(liveProgress.progress_percent || 0);
         currentPage = Number(liveProgress.last_page || 0) || undefined;
         totalPages = Number(liveProgress.total_pages || 0) || undefined;
+        lastSection = typeof liveProgress.last_section === 'string' ? liveProgress.last_section : undefined;
       } else {
         const { data: progressRow } = await supabase
           .from('reading_progress')
@@ -166,6 +170,7 @@ export async function getFlagshipMaterial(
         progress,
         currentPage,
         totalPages,
+        lastSection,
       },
       error: null,
     };

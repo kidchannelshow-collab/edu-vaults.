@@ -236,6 +236,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentPath, onNavigate })
                 </p>
               </div>
 
+              {!material.isLocked && (
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs text-ink-muted">
+                    <span className="min-w-0 truncate">
+                      <span className="font-semibold text-ink">{material.progress}% Completed</span>
+                      {material.lastSection
+                        ? ` · ${material.lastSection}`
+                        : material.currentPage && material.totalPages
+                          ? ` · Page ${material.currentPage} of ${material.totalPages}`
+                          : ''}
+                    </span>
+                    <span className="tabular-nums text-ink-faint">
+                      {material.currentPage && material.totalPages
+                        ? `${material.currentPage}/${material.totalPages}`
+                        : ''}
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-overlay-strong">
+                    <div
+                      className="h-full rounded-full bg-gold transition-[width] duration-500"
+                      style={{ width: `${material.progress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line-strong pt-4">
                 {material.isLocked ? (
                   <>
