@@ -1,25 +1,27 @@
-import * as pdfjsLib from 'pdfjs-dist';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+// Same package, same version as the API above. The legacy worker ships PDF.js's
+// bundled core-js `Promise.withResolvers` polyfill, which the standard
+// `build/pdf.worker.min.mjs` does not. Importing it through Vite as a URL keeps
+// the worker same-origin and removes the old CDN version-drift risk.
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 
 /**
  * Single source of truth for the PDF.js worker.
  *
- * The worker MUST be the exact same version as the API. Hard-coding a worker
- * URL (or bundling a worker from a different major) is what produces:
- *   "The API version does not match the Worker version"
- * and, in pdf.js v6's production chunking, `a.toHex is not a function`.
+ * The worker MUST be the exact same version as the API. Both files are imported
+ * from the installed `pdfjs-dist` package, so they cannot drift:
+ *   - API:    pdfjs-dist/legacy/build/pdf.mjs
+ *   - Worker: pdfjs-dist/legacy/build/pdf.worker.min.mjs
  *
- * `pdfjsLib.version` is resolved from the installed package at build time, so
- * upgrading `pdfjs-dist` moves the worker URL with it automatically.
- *
- * Extension note: pdf.js v4 ships `pdf.worker.min.mjs` ONLY (there is no
- * `pdf.worker.min.js` — cdnjs returns 404 for it). Do not "fix" this to `.js`.
+ * Do not point this at a CDN worker or bundle a worker from another version;
+ * that produces "The API version does not match the Worker version".
  */
 const rawVersion = pdfjsLib.version || '';
 const versionMatch = rawVersion.match(/\d+\.\d+\.\d+/);
 export const PDF_WORKER_VERSION = versionMatch ? versionMatch[0] : rawVersion;
 
-export const PDF_WORKER_SRC =
-  `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDF_WORKER_VERSION}/pdf.worker.min.mjs`;
+/** Same-origin worker asset emitted by Vite from the installed package. */
+export const PDF_WORKER_SRC = pdfWorkerUrl;
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC;
 

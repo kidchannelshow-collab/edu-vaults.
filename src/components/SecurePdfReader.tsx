@@ -119,6 +119,28 @@ const ZOOM_PERCENT_MAX = 500;
 const clampPercent = (n: number) =>
   Math.min(ZOOM_PERCENT_MAX, Math.max(ZOOM_PERCENT_MIN, Math.round(n / 10) * 10));
 
+/** Upper bound for the PDF.js document handshake. */
+const PDF_LOAD_TIMEOUT_MS = 45_000;
+
+/**
+ * Turn low-level PDF.js failures into a message a student can act on. The raw
+ * message is preserved when it is already useful.
+ */
+function describePdfError(err: any): string {
+  const message =
+    typeof err?.message === 'string' && err.message.trim()
+      ? err.message
+      : 'The document could not be opened.';
+
+  if (/withResolvers/i.test(message)) {
+    return 'This browser is missing a JavaScript feature required by the PDF viewer. Update Chrome, Safari, or Android WebView, then try again.';
+  }
+  if (/worker/i.test(message) && /version/i.test(message)) {
+    return 'The PDF viewer worker could not start. Reload the page and try again.';
+  }
+  return message;
+}
+
 interface ChapterMark {
   page: number;
   title: string;
@@ -208,6 +230,8 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
   const [pageRendering, setPageRendering] = useState(false);
   // Exact page restored from localStorage, surfaced as "Resume from page X".
   const [resumeFrom, setResumeFrom] = useState<number | null>(null);
+  // Incremented by the error panel's "Try again" button to re-run the load.
+  const [retryToken, setRetryToken] = useState(0);
 
   // Live progress sync (user_material_progress). The user id is resolved once;
   // the upsert is debounced so scrolling never floods Supabase.
@@ -274,22 +298,38 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
     }
   }, []);
 
-  // ---- Load the document (once per URL) -----------------------------------
+  // ---- Load the document (once per URL / retry) ---------------------------
   useEffect(() => {
     let cancelled = false;
+    let loadTimeout: number | undefined;
     setStatus('loading');
     setError(null);
     setNumPages(0);
     setBaseScale(null);
+    setPageRendering(false);
 
     (async () => {
       try {
         const loadingTask = pdfjsLib.getDocument({ url });
         loadingTaskRef.current = loadingTask;
-        const doc = await loadingTask.promise;
+
+        // A failed worker can leave this promise pending forever, which is what
+        // produced the endless "Opening document..." state. Bound the
+        // handshake so every failure path reaches the error panel.
+        const timeout = new Promise<never>((_, reject) => {
+          loadTimeout = window.setTimeout(() => {
+            reject(
+              new Error(
+                'The document took too long to load. Check your connection and try again.',
+              ),
+            );
+          }, PDF_LOAD_TIMEOUT_MS);
+        });
+
+        const doc = await Promise.race([loadingTask.promise, timeout]);
         if (cancelled) {
           // The task owns the document and worker; destroying the proxy
-          // directly is not part of the public v6 API.
+          // directly is not part of the public PDF.js API.
           void loadingTask.destroy?.();
           return;
         }
@@ -309,20 +349,42 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
         await measure();
       } catch (err: any) {
         if (cancelled) return;
+
+        // Set the error state before tearing the worker down: a synchronous
+        // teardown failure must not leave the UI stuck on "Opening document...".
+        const task = loadingTaskRef.current;
+        loadingTaskRef.current = null;
+        docRef.current = null;
+        setPageRendering(false);
         setStatus('error');
-        setError(err?.message || 'The document could not be opened.');
+        setError(describePdfError(err));
+
+        // Stop the worker after a timeout/initialization failure so it cannot
+        // keep running behind the error panel.
+        try {
+          void task?.destroy?.();
+        } catch {
+          /* teardown is best-effort */
+        }
+      } finally {
+        if (loadTimeout !== undefined) {
+          window.clearTimeout(loadTimeout);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
+      if (loadTimeout !== undefined) {
+        window.clearTimeout(loadTimeout);
+      }
       renderSeqRef.current++;
       renderTaskRef.current?.cancel?.();
       void loadingTaskRef.current?.destroy?.();
       loadingTaskRef.current = null;
       docRef.current = null;
     };
-  }, [url, materialId, measure]);
+  }, [url, materialId, measure, retryToken]);
 
   // ---- Re-measure on resize and on layout switch ---------------------------
   useEffect(() => {
@@ -754,7 +816,7 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
     return shell(
       <div className="flex min-h-[420px] items-center justify-center gap-3 rounded-lg border border-line-strong bg-surface-deep text-sm text-ink-muted">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Opening documentâ€¦
+        Opening document...
       </div>,
     );
   }
@@ -765,8 +827,15 @@ export const SecurePdfReader: React.FC<SecurePdfReaderProps> = ({
         <AlertTriangle className="h-5 w-5 text-danger" />
         <p className="max-w-md text-sm text-danger">{error}</p>
         <p className="max-w-md text-xs text-danger/80">
-          Signed URLs expire â€” reload or re-mint to get a fresh one.
+          Signed URLs expire. Reload the page or re-mint the document to get a fresh one.
         </p>
+        <button
+          type="button"
+          onClick={() => setRetryToken((token) => token + 1)}
+          className="mt-1 rounded-md border border-danger/40 bg-danger/10 px-4 py-2 text-xs font-semibold text-danger transition-colors hover:bg-danger/20"
+        >
+          Try again
+        </button>
       </div>,
     );
   }
