@@ -44,6 +44,7 @@ import { checkDeviceSessionActive, revokeCurrentDeviceSession } from '../lib/dev
 import { hasPendingClaim, submitPaymentClaim } from '../lib/fulfilmentService';
 import { SecurePdfReader } from '../components/SecurePdfReader';
 import { PreviewPdfPages } from '../components/PreviewPdfPages';
+import { usePrivacyProtection } from '../hooks/usePrivacyProtection';
 import {
   FALLBACK_MATERIAL_DESCRIPTION,
   FALLBACK_MATERIAL_TITLE,
@@ -401,6 +402,33 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
     setHardLocked(true);
   };
 
+  // Scoped privacy protection for the authenticated reading session only.
+  //
+  // The upstream project (dxvzz/Screenshot-PrivacyProtectionWeb) is not on npm,
+  // so its MIT-licensed techniques are adapted in src/lib/privacyProtect.ts
+  // rather than installed. The hook is enabled ONLY while the secure reader is
+  // live, and its manager removes every listener/overlay on session close or
+  // unmount (including React Strict Mode's double mount).
+  //
+  // EduVault's own per-student watermark remains the single overlay: both
+  // watermark layers below carry data-eduvault-watermark, and the adapted module
+  // deliberately declines to add a second one. `watermarkText` is still
+  // configured so a non-EduVault consumer would get a watermark.
+  usePrivacyProtection({
+    enabled: readerState === 'active' && Boolean(user),
+    feedback: true,
+    blockPrint: true,
+    watermarkText: `LICENSED TO: ${userName.toUpperCase()} • ${userEmailMasked.toUpperCase()} • SESSION ${sessionIdRef.current}`,
+    printNoticeText: `This material is licensed to ${userName} (${userEmailMasked}). Printing is disabled.`,
+    onBlocked: (reason) => {
+      // The existing session policy counts a print attempt as a strike. Copy,
+      // context-menu and drag blocks are deterrents only, not strikes.
+      if (reason === 'print') {
+        void handleScreenshotAttempt('browser_print_dialog');
+      }
+    },
+  });
+
   // Screenshot and print shortcut listeners
   useEffect(() => {
     if (readerState !== 'active') return;
@@ -435,17 +463,14 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
       }
     };
 
-    const handleBeforePrint = (e: Event) => {
-      e.preventDefault();
-      handleScreenshotAttempt('browser_print_dialog');
-    };
-
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('beforeprint', handleBeforePrint);
+
+    // `beforeprint` is owned by usePrivacyProtection, which blocks printing and
+    // reports the attempt through onBlocked. Keeping it there avoids a second
+    // listener and a duplicate strike on the same print action.
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('beforeprint', handleBeforePrint);
     };
   }, [readerState, material, user]);
 
@@ -742,7 +767,7 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
   ];
 
   const WHATSAPP_LINK =
-    'https://wa.me/2349162259958?text=Hello%2C%20I%20have%20transferred%20%E2%82%A61%2C500%20for%20book%20access.';
+    'https://wa.me/2348074829070?text=Hello%2C%20I%20have%20transferred%20%E2%82%A61%2C500%20for%20book%20access.';
 
   const copyToClipboard = async (key: string, value: string) => {
     try {
@@ -1111,7 +1136,7 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
               rel="noopener noreferrer"
               className="font-semibold text-gold hover:underline"
             >
-              09162259958
+              08074829070
             </a>{' '}
             on WhatsApp or SMS for instant book activation.
           </p>
@@ -1230,7 +1255,7 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
                   rel="noreferrer"
                   className="font-medium text-gold hover:underline"
                 >
-                  09162259958
+                  08074829070
                 </a>{' '}
                 on WhatsApp to activate your book access.
               </div>
@@ -1389,14 +1414,11 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
       <div
         ref={fullscreenStageRef}
         data-reader-scroll
-        onContextMenu={(e) => e.preventDefault()}
-        onDragStart={(e) => e.preventDefault()}
-        onCopy={(e) => e.preventDefault()}
-        onCut={(e) => e.preventDefault()}
+        data-eduvault-protected
         className="fixed inset-0 z-[100] flex min-h-screen w-screen select-none flex-col overflow-auto bg-canvas [-webkit-touch-callout:none]"
       >
         <div className="relative flex min-h-screen w-full flex-col p-2">
-          <div className="pointer-events-none absolute inset-0 z-10 flex select-none flex-col items-center justify-center space-y-16 opacity-[0.04] [transform:rotate(-25deg)]">
+          <div data-eduvault-watermark="student" className="pointer-events-none absolute inset-0 z-10 flex select-none flex-col items-center justify-center space-y-16 opacity-[0.04] [transform:rotate(-25deg)]">
             <div className="whitespace-nowrap text-2xl font-black tracking-widest sm:text-3xl">
               LICENSED TO: {userName.toUpperCase()} • {userEmailMasked.toUpperCase()} • SESSION {sessionIdRef.current}
             </div>
@@ -1449,10 +1471,7 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
   // sidebar, no app header — only the minimal control bar and the canvas.
   return (
     <div
-      onContextMenu={(e) => e.preventDefault()}
-      onDragStart={(e) => e.preventDefault()}
-      onCopy={(e) => e.preventDefault()}
-      onCut={(e) => e.preventDefault()}
+      data-eduvault-protected
       className="fixed inset-0 flex h-screen w-screen select-none flex-col overflow-hidden overscroll-none bg-canvas [-webkit-touch-callout:none]"
     >
       {/* Slim title bar — title is centred between Back and the session badge */}
@@ -1636,7 +1655,7 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
             className="relative h-full w-full bg-slate-950 select-none print:hidden"
           >
               {/* Watermark */}
-              <div className="pointer-events-none absolute inset-0 z-10 flex select-none flex-col items-center justify-center space-y-16 opacity-[0.04] [transform:rotate(-25deg)]">
+              <div data-eduvault-watermark="student" className="pointer-events-none absolute inset-0 z-10 flex select-none flex-col items-center justify-center space-y-16 opacity-[0.04] [transform:rotate(-25deg)]">
                 <div className="whitespace-nowrap text-2xl font-black tracking-widest sm:text-3xl">
                   LICENSED TO: {userName.toUpperCase()} • {userEmailMasked.toUpperCase()} • SESSION {sessionIdRef.current}
                 </div>
