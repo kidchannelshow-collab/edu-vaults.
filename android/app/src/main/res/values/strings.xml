@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">EduVault Secure Viewer</string>
+
+    <!--
+      Canonical HTTPS URL of the deployed EduVault site.
+
+      The host only loads this exact host (plus its www./apex variant). Every
+      other main-frame navigation is either opened in the system browser
+      (external HTTPS, mailto:, tel:) or refused (http:, intent:, file:, data:).
+    -->
+    <string name="eduvault_url" translatable="false">https://edu-vaults-od9q.vercel.app/</string>
+
+    <string name="load_error_title">EduVault could not load</string>
+    <string name="load_error_detail">Check your connection and try again.\n\n%1$s</string>
+    <string name="network_error">Network error</string>
+    <string name="ssl_error">The secure connection to EduVault could not be verified.</string>
+    <string name="retry">Retry</string>
+    <string name="downloads_disabled">Downloads are disabled in the secure viewer.</string>
+    <string name="no_app">No app can open this link.</string>
+    <string name="config_error">EduVault Secure Viewer is not configured.\n\nSet eduvault_url in android/app/src/main/res/values/strings.xml to your deployed HTTPS EduVault URL, then rebuild the app.</string>
+</resources>

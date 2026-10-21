@@ -1162,7 +1162,7 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-info" />
           <span className="text-xs leading-relaxed text-ink-muted">
             Once your receipt is confirmed, an administrator activates this book for your
-            account. Your secure reader, watermark and screenshot protection are unchanged.
+            account. Your secure reader, watermark and access controls are unchanged.
           </span>
         </div>
       </div>
@@ -1377,8 +1377,9 @@ export const Material: React.FC<MaterialProps> = ({ currentPath, onNavigate }) =
             <div className="space-y-1.5">
               <h2 className="text-lg font-semibold text-ink">Open the secure reader</h2>
               <p className="max-w-md text-sm leading-relaxed text-ink-muted">
-                The full guide opens in the protected canvas with watermarking, pagination and
-                screenshot protection.
+                The full guide opens in the protected canvas with watermarking and pagination.
+                On Android, system-level screenshot blocking requires the EduVault Secure Viewer
+                app; ordinary Chrome cannot block OS screenshots.
               </p>
             </div>
             <Button

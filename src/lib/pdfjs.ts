@@ -3,7 +3,7 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 // bundled core-js `Promise.withResolvers` polyfill, which the standard
 // `build/pdf.worker.min.mjs` does not. Importing it through Vite as a URL keeps
 // the worker same-origin and removes the old CDN version-drift risk.
-import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?worker&url';
 
 /**
  * Single source of truth for the PDF.js worker.
@@ -20,8 +20,16 @@ const rawVersion = pdfjsLib.version || '';
 const versionMatch = rawVersion.match(/\d+\.\d+\.\d+/);
 export const PDF_WORKER_VERSION = versionMatch ? versionMatch[0] : rawVersion;
 
-/** Same-origin worker asset emitted by Vite from the installed package. */
-export const PDF_WORKER_SRC = pdfWorkerUrl;
+/**
+ * Same-origin worker asset emitted by Vite from the installed package.
+ *
+ * The version query is deliberate: it gives a stale browser/CDN entry from an
+ * earlier deployment a different cache key, so a cached SPA index.html can
+ * never be parsed as the worker ("Unexpected token '<'").
+ */
+export const PDF_WORKER_SRC = `${pdfWorkerUrl}${
+  pdfWorkerUrl.includes('?') ? '&' : '?'
+}v=${encodeURIComponent(PDF_WORKER_VERSION || 'dev')}`;
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC;
 

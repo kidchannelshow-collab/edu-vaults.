@@ -135,6 +135,9 @@ function describePdfError(err: any): string {
   if (/withResolvers/i.test(message)) {
     return 'This browser is missing a JavaScript feature required by the PDF viewer. Update Chrome, Safari, or Android WebView, then try again.';
   }
+  if (/fake worker|unexpected token/i.test(message)) {
+    return 'The PDF viewer worker could not be loaded. Reload the page; if it persists, clear the site cache and try again.';
+  }
   if (/worker/i.test(message) && /version/i.test(message)) {
     return 'The PDF viewer worker could not start. Reload the page and try again.';
   }
